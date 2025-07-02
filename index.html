@@ -294,119 +294,57 @@
   <canvas id="canvas" style="display:none;"></canvas>
 
   <script>
-    function toggleInfo() {
-      const panel = document.getElementById('infoPanel');
-      panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
-    }
+async function compressImage() {
+  if (!imageData) return alert("Silakan unggah gambar terlebih dahulu.");
+  const mode = document.querySelector('input[name="mode"]:checked').value;
 
-    const upload = document.getElementById('upload');
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const original = document.getElementById('original');
-    const output = document.getElementById('output');
-    const infoText = document.getElementById('infoText');
-    const progressFill = document.getElementById('progressFill');
-    const downloadLink = document.getElementById('download');
-    const previewArea = document.getElementById('previewArea');
-    let imageData = null;
+  infoText.textContent = "Mengompresi...";
+  progressFill.style.width = `0%`;
 
-    upload.addEventListener('change', (e) => {
-      const file = e.target.files[0];
-      const reader = new FileReader();
-      reader.onload = function (event) {
-        const img = new Image();
-        img.onload = function () {
-          canvas.width = img.width;
-          canvas.height = img.height;
-          ctx.drawImage(img, 0, 0);
-          imageData = ctx.getImageData(0, 0, img.width, img.height);
-          original.src = canvas.toDataURL("image/png");
-          previewArea.style.display = 'block';
-        };
-        img.src = event.target.result;
-      };
-      reader.readAsDataURL(file);
-    });
+  let data = new Uint8ClampedArray(imageData.data);
+  let factor = (mode === 'lossy') ? 16 : 1; // lossy lebih agresif
+  let step = 0;
 
-    async function compressImage() {
-      if (!imageData) return alert("Silakan unggah gambar terlebih dahulu.");
-      const mode = document.querySelector('input[name="mode"]:checked').value;
-      const factor = (mode === 'lossy') ? 8 : 1;
-
-      infoText.textContent = "Mengompresi...";
-      progressFill.style.width = `0%`;
-
-      let data = new Uint8ClampedArray(imageData.data);
-      let step = 0;
-
-      for (let i = 0; i < data.length; i += 4) {
-        if (factor > 1) {
-          data[i] = Math.floor(data[i] / factor) * factor;
-          data[i + 1] = Math.floor(data[i + 1] / factor) * factor;
-          data[i + 2] = Math.floor(data[i + 2] / factor) * factor;
-        }
-        step++;
-        if (step % 10000 === 0) {
-          let percent = Math.min(100, Math.floor((i / data.length) * 100));
-          progressFill.style.width = percent + '%';
-          infoText.textContent = `Mengompresi... ${percent}%`;
-          await new Promise(resolve => setTimeout(resolve, 10));
-        }
+  // Jika mode lossy, reduksi warna
+  if (factor > 1) {
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = Math.floor(data[i] / factor) * factor;       // R
+      data[i + 1] = Math.floor(data[i + 1] / factor) * factor; // G
+      data[i + 2] = Math.floor(data[i + 2] / factor) * factor; // B
+      step++;
+      if (step % 10000 === 0) {
+        let percent = Math.min(100, Math.floor((i / data.length) * 100));
+        progressFill.style.width = percent + '%';
+        infoText.textContent = `Mengompresi... ${percent}%`;
+        await new Promise(resolve => setTimeout(resolve, 10));
       }
-
-      const encoded = rleEncode(data);
-      const decoded = rleDecode(encoded, imageData.width, imageData.height);
-      ctx.putImageData(decoded, 0, 0);
-      const result = canvas.toDataURL("image/png");
-      output.src = result;
-      downloadLink.href = result;
-
-      const originalSize = imageData.data.length;
-      const compressedSize = JSON.stringify(encoded).length;
-      const ratio = (compressedSize / originalSize).toFixed(2);
-
-      infoText.innerHTML = `
-        Mode: <strong>${mode.toUpperCase()}</strong><br>
-        Setelah kompresi: <strong>${(originalSize / 1024).toFixed(2)} KB</strong><br>
-        Ukuran asli: <strong>${(compressedSize / 1024).toFixed(2)} KB</strong><br>
-        Rasio Kompresi: <strong>${ratio}</strong>
-      `;
-
-      progressFill.style.width = '100%';
     }
+  }
 
-    function rleEncode(data) {
-      let encoded = [];
-      for (let i = 0; i < data.length; i += 4) {
-        let count = 1;
-        while (
-          i + 4 * count < data.length &&
-          data[i] === data[i + 4 * count] &&
-          data[i + 1] === data[i + 4 * count + 1] &&
-          data[i + 2] === data[i + 4 * count + 2] &&
-          data[i + 3] === data[i + 4 * count + 3]
-        ) {
-          count++;
-        }
-        encoded.push({ r: data[i], g: data[i+1], b: data[i+2], a: data[i+3], count });
-        i += 4 * (count - 1);
-      }
-      return encoded;
-    }
+  const encoded = rleEncode(data);
+  const decoded = rleDecode(encoded, imageData.width, imageData.height);
+  ctx.putImageData(decoded, 0, 0);
+  const result = canvas.toDataURL("image/png");
+  output.src = result;
+  downloadLink.href = result;
 
-    function rleDecode(encoded, width, height) {
-      let decoded = new Uint8ClampedArray(width * height * 4);
-      let i = 0;
-      for (const pixel of encoded) {
-        for (let j = 0; j < pixel.count; j++) {
-          decoded[i++] = pixel.r;
-          decoded[i++] = pixel.g;
-          decoded[i++] = pixel.b;
-          decoded[i++] = pixel.a;
-        }
-      }
-      return new ImageData(decoded, width, height);
-    }
+  // Hitung ukuran asli dan hasil kompresi
+  const originalBytes = data.length; // Byte RGBA (4 byte per pixel)
+  const compressedBytes = encoded.length * 5; 
+  // 5 byte per entri (RGBA + count disederhanakan)
+
+  const ratio = (originalBytes / compressedBytes).toFixed(2);
+
+  infoText.innerHTML = `
+    Mode: <strong>${mode.toUpperCase()}</strong><br>
+    Ukuran Asli: <strong>${(originalBytes / 1024).toFixed(2)} KB</strong><br>
+    Setelah Kompresi: <strong>${(compressedBytes / 1024).toFixed(2)} KB</strong><br>
+    Rasio Kompresi: <strong>${ratio}x</strong>
+  `;
+
+  progressFill.style.width = '100%';
+}
+
   </script>
 </body>
 </html>
