@@ -302,7 +302,7 @@ async function compressImage() {
   progressFill.style.width = `0%`;
 
   let data = new Uint8ClampedArray(imageData.data);
-  let factor = (mode === 'lossy') ? 16 : 1; // lossy lebih agresif
+  let factor = (mode === 'lossy') ? 32 : 1; // lossy lebih agresif
   let step = 0;
 
   // Jika mode lossy, reduksi warna
